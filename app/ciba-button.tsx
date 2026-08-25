@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { sanitizeBindingInput } from "@/lib/binding-message";
 
 type Status = "idle" | "sending" | "pending" | "approved" | "denied" | "error";
 
@@ -25,7 +26,10 @@ export function CibaButton() {
     }
 
     setStatus("pending");
-    setDetail(`Email sent to ${started.email}. Check the inbox.`);
+    setBindingMessage(started.bindingMessage || bindingMessage);
+    setDetail(
+      `Email sent to ${started.email}. Review should show: ${started.bindingMessage}`,
+    );
     let intervalMs = Math.max(5, Number(started.interval ?? 5)) * 1000;
 
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,7 +44,7 @@ export function CibaButton() {
       const result = await poll.json();
       if (result.status === "approved") {
         setStatus("approved");
-        setDetail("");
+        setDetail("Approved. Send another if you want.");
         return;
       }
       if (result.status === "denied") {
@@ -59,10 +63,10 @@ export function CibaButton() {
     }
   }
 
-  const disabled = status === "sending" || status === "pending" || status === "approved";
+  const busy = status === "sending" || status === "pending";
   const label =
     status === "approved"
-      ? "Approved"
+      ? "Send another"
       : status === "sending"
         ? "Sending email…"
         : status === "pending"
@@ -76,9 +80,11 @@ export function CibaButton() {
         <input
           type="text"
           maxLength={64}
-          disabled={disabled}
+          disabled={busy}
           value={bindingMessage}
-          onChange={(event) => setBindingMessage(event.target.value)}
+          onChange={(event) =>
+            setBindingMessage(sanitizeBindingInput(event.target.value))
+          }
           className="rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
         />
         <span className="text-xs text-zinc-400">
@@ -87,7 +93,7 @@ export function CibaButton() {
       </label>
       <button
         type="button"
-        disabled={disabled}
+        disabled={busy}
         onClick={sendApproval}
         className="rounded-full bg-zinc-900 px-8 py-3 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
       >

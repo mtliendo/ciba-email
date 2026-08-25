@@ -1,7 +1,8 @@
+import { sanitizeBindingMessage } from './binding-message'
+
 const CIBA_EMAIL = 'admin@focusotter.com'
 // Auth0 sends email when requested_expiry is 301-259200s. <=300 is Guardian push.
 const EMAIL_EXPIRY_SECONDS = 600
-const BINDING_ALLOWED = /[^A-Za-z0-9+\-._.,:#]/g
 
 function domain() {
   const raw = process.env.AUTH0_DOMAIN
@@ -17,15 +18,6 @@ function requireEnv(name: string) {
   const value = process.env[name]
   if (!value) throw new Error(`${name} is not set`)
   return value
-}
-
-export function sanitizeBindingMessage(raw: string) {
-  const cleaned = raw
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(BINDING_ALLOWED, '')
-    .slice(0, 64)
-  return cleaned || 'Approve-this-action'
 }
 
 export async function resolveCibaUserSub(
@@ -44,11 +36,12 @@ export async function resolveCibaUserSub(
 }
 
 export async function startCiba(sub: string, bindingMessage: string) {
+  const cleaned = sanitizeBindingMessage(bindingMessage)
   const body = new URLSearchParams({
     client_id: requireEnv('AUTH0_CLIENT_ID'),
     client_secret: requireEnv('AUTH0_CLIENT_SECRET'),
     scope: 'openid',
-    binding_message: sanitizeBindingMessage(bindingMessage),
+    binding_message: cleaned,
     requested_expiry: String(EMAIL_EXPIRY_SECONDS),
     login_hint: JSON.stringify({
       format: 'iss_sub',
@@ -73,7 +66,7 @@ export async function startCiba(sub: string, bindingMessage: string) {
     interval: Number(json.interval ?? 5),
     expiresIn: Number(json.expires_in ?? EMAIL_EXPIRY_SECONDS),
     email: CIBA_EMAIL,
-    bindingMessage: sanitizeBindingMessage(bindingMessage),
+    bindingMessage: cleaned,
   }
 }
 
