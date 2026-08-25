@@ -35,3 +35,27 @@ You only need one paid tenant. Reuse it for later demos.
 4. Leave the default Auth0 email provider if this is not going to prod. Optional: Branding > Email Templates > Asynchronous Approval if you want to customize the mail.
 5. Confirm admin@focusotter.com exists and the email is verified.
 6. Copy env.example to .env.local. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, a random AUTH0_SECRET, and APP_BASE_URL.
+
+## FAQ
+
+### Why CIBA instead of just emailing a link with Resend?
+
+Three people.
+
+You are at dinner. Your Demo PM needs 30 minutes on your Google Calendar Thursday for a rehearsal. He does not have your Google. He tells your agent: book Focus Thursday 4 to 4:30, title Rehearsal.
+
+The agent cannot write your calendar. It is not you. So it asks Auth0: I need a token for Focus, calendar write, message Rehearsal-Thu-4pm. Auth0 knows you as admin@focusotter.com. It emails you. The Demo PM is still in Slack. The agent is sitting there polling. You are the only one who got mail.
+
+You tap Accept. That tap is you telling Auth0: yes, this app can write my calendar for that. Auth0 hands the agent an access token. The agent writes Thursday 4pm. The Demo PM never got your password, never got the token, never opened a browser as you. He only asked. The agent only acted after you said yes to Auth0. If you ignore the mail, he still has nothing, and your calendar is empty.
+
+That is CIBA. I request, the agent waits, you authorize. The leftover is a token that says this user authorized this client.
+
+### What does the poor-man's Resend version do?
+
+Same scene, cheaper wire.
+
+The Demo PM (or the agent) sends you mail through Resend: Approve rehearsal Thursday 4pm? with a button to yoursite.com/yes?ticket=abc. You click it. Your app marks ticket abc approved, then YOUR code calls Google with a Calendar key you already saved, or as a service account.
+
+Auth0 never heard about it. The click proved someone who got that mail hit your URL. It did not prove Michael authorized this app to write his calendar right now. If the next step needs his Google access, you already had to be holding that token from some earlier login. The email did not mint one.
+
+Same tap. Different leftover: a yes-row in your database vs an Auth0-issued access token. Use Resend when a yes/no in your database is enough. Use CIBA when the next call has to be as that user.
