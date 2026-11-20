@@ -1,107 +1,121 @@
 "use client";
 
-import { useState } from "react";
-import { sanitizeBindingInput } from "@/lib/binding-message";
+import { useEffect, useState, type FormEvent } from "react";
+import { DURATIONS, TITLE_MAX } from "@/lib/binding-message";
+import type { ApprovalStatus } from "@/lib/approval";
 
-type Status = "idle" | "sending" | "pending" | "approved" | "denied" | "error";
+type Props = {
+  email: string;
+  initialStatus: ApprovalStatus | null;
+};
 
-export function CibaButton() {
-  const [status, setStatus] = useState<Status>("idle");
-  const [detail, setDetail] = useState("");
-  const [bindingMessage, setBindingMessage] = useState("Approve-this-action");
+export function CibaButton({ email, initialStatus }: Props) {
+  const [status, setStatus] = useState(initialStatus);
+  const [sending, setSending] = useState(false);
+  const pending = status?.status === "pending" ? status : null;
+  const busy = sending || !!pending;
 
-  async function sendApproval() {
-    setStatus("sending");
-    setDetail("");
-    const start = await fetch("/api/ciba/start", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ bindingMessage }),
-    });
-    const started = await start.json();
-    if (!start.ok) {
-      setStatus("error");
-      setDetail(started.error || "bc-authorize failed");
-      return;
-    }
+  useEffect(() => {
+    if (!pending) return;
+    const controller = new AbortController();
+    const wait = Math.min(pending.pollAfter, Math.max(0, pending.expiresAt - Date.now()));
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch("/api/ciba/poll", { method: "POST", signal: controller.signal });
+        const result = await response.json();
+        if (!controller.signal.aborted) {
+          setStatus(response.ok ? result : { status: "error", detail: result.detail });
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setStatus({ status: "error", detail: "Connection lost. Reload this page to check or resume the request." });
+        }
+      }
+    }, wait);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pending]);
 
-    setStatus("pending");
-    setBindingMessage(started.bindingMessage || bindingMessage);
-    setDetail(
-      `Email sent to ${started.email}. Review should show: ${started.bindingMessage}`,
-    );
-    let intervalMs = Math.max(5, Number(started.interval ?? 5)) * 1000;
-
-    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    for (;;) {
-      await wait(intervalMs);
-      const poll = await fetch("/api/ciba/poll", {
+  async function sendApproval(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    const data = new FormData(event.currentTarget);
+    setSending(true);
+    setStatus(null);
+    try {
+      const response = await fetch("/api/ciba/start", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ authReqId: started.authReqId }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: data.get("title"),
+          start: data.get("start"),
+          duration: Number(data.get("duration")),
+        }),
       });
-      const result = await poll.json();
-      if (result.status === "approved") {
-        setStatus("approved");
-        setDetail("Approved. Send another if you want.");
-        return;
-      }
-      if (result.status === "denied") {
-        setStatus("denied");
-        setDetail(result.error || "Denied or expired");
-        return;
-      }
-      if (result.status === "error") {
-        setStatus("error");
-        setDetail(result.error || "Poll failed");
-        return;
-      }
-      if (result.interval) {
-        intervalMs = Math.max(5, Number(result.interval)) * 1000;
-      }
+      const result = await response.json();
+      setStatus(response.ok ? result : { status: "error", detail: result.detail });
+    } catch {
+      setStatus({ status: "error", detail: "Could not reach the app. Reload this page to check for a pending request." });
+    } finally {
+      setSending(false);
     }
   }
 
-  const busy = status === "sending" || status === "pending";
-  const label =
-    status === "approved"
-      ? "Send another"
-      : status === "sending"
-        ? "Sending email…"
-        : status === "pending"
-          ? "Waiting for email approval…"
-          : "Send approval";
+  const control = "rounded-lg border border-stone-300 bg-white px-3 py-2 text-stone-950 disabled:bg-stone-100";
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-4">
-      <label className="flex w-full flex-col gap-1 text-sm text-zinc-500">
-        Binding message (shows on the email review)
-        <input
-          type="text"
-          maxLength={64}
-          disabled={busy}
-          value={bindingMessage}
-          onChange={(event) =>
-            setBindingMessage(sanitizeBindingInput(event.target.value))
-          }
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-        />
-        <span className="text-xs text-zinc-400">
-          Auth0 allows letters, numbers, and +-_.,:# only. No spaces. Max 64 chars.
-        </span>
-      </label>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={sendApproval}
-        className="rounded-full bg-zinc-900 px-8 py-3 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-      >
-        {label}
-      </button>
-      {detail ? (
-        <p className="max-w-md text-center text-sm text-zinc-500">{detail}</p>
-      ) : null}
-    </div>
+    <section className="rounded-xl border border-stone-200 bg-white p-5 sm:p-6">
+      <h2 className="text-lg font-semibold text-emerald-950">2. Request email approval</h2>
+      <p className="mt-1 break-all text-sm text-stone-600">Auth0 sends the request to {email}.</p>
+      <form onSubmit={sendApproval} className="mt-5 grid gap-4">
+        <label className="grid gap-1 text-sm font-medium">
+          Event title
+          <input
+            name="title" className={control} required maxLength={TITLE_MAX}
+            placeholder="Demo rehearsal" disabled={busy} defaultValue={pending?.action.title}
+            aria-describedby="title-help"
+          />
+          <span id="title-help" className="text-xs font-normal text-stone-600">
+            Up to {TITLE_MAX} characters. Start with a letter or number; use English letters, digits, spaces or + - _ . , : #.
+          </span>
+        </label>
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+          <label className="grid min-w-0 gap-1 text-sm font-medium">
+            Start (UTC)
+            <input name="start" type="datetime-local" required className={control} disabled={busy} defaultValue={pending?.action.start} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Duration
+            <select name="duration" className={control} disabled={busy} defaultValue={pending?.action.duration ?? 30}>
+              {DURATIONS.map((duration) => <option key={duration} value={duration}>{duration} minutes</option>)}
+            </select>
+          </label>
+        </div>
+        <button type="submit" disabled={busy} className="w-fit rounded-lg bg-emerald-900 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-950 disabled:cursor-not-allowed disabled:opacity-60">
+          {sending ? "Sending approval email…" : pending ? "Waiting for approval…" : "Request email approval"}
+        </button>
+      </form>
+      <div role="status" aria-live="polite">
+        {pending ? (
+          <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-semibold">Waiting for email approval</p>
+            <p className="mt-1">Check your inbox and compare the request below before approving. Nothing has been added yet.</p>
+            <p className="mt-2 font-mono text-xs break-all">{pending.bindingMessage}</p>
+          </div>
+        ) : status?.status === "created" ? (
+          <div className="mt-5 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950">
+            <p className="font-semibold">Approved · Event created</p>
+            {status.link ? <a href={status.link} target="_blank" rel="noreferrer" className="mt-1 inline-block underline">Open in Google Calendar</a> : null}
+          </div>
+        ) : status && "detail" in status ? (
+          <div className="mt-5 rounded-lg border border-stone-300 bg-stone-50 p-4 text-sm text-stone-800">
+            <p className="font-semibold">{status.status === "denied" ? "Approval declined" : status.status === "expired" ? "Approval expired" : "Could not complete the request"}</p>
+            <p className="mt-1">{status.detail}</p>
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
