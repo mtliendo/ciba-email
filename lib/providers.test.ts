@@ -4,6 +4,11 @@ import { exchangeConnectionToken, pollCiba, startCiba } from "./ciba.ts";
 import { CalendarConsentRequired, insertEvent } from "./calendar.ts";
 
 test("CIBA requests bind the session subject and use email expiry and the CIBA grant", async (t) => {
+  const previous = process.env.AUTH0_CIBA_REVIEW_AUDIENCE;
+  delete process.env.AUTH0_CIBA_REVIEW_AUDIENCE;
+  t.after(() => {
+    if (previous !== undefined) process.env.AUTH0_CIBA_REVIEW_AUDIENCE = previous;
+  });
   Object.assign(process.env, {
     AUTH0_DOMAIN: "example.auth0.com",
     AUTH0_CLIENT_ID: "demo-client",
@@ -18,6 +23,8 @@ test("CIBA requests bind the session subject and use email expiry and the CIBA g
       assert.deepEqual(JSON.parse(params.get("login_hint")!), { format: "iss_sub", iss: url.origin + "/", sub: "auth0|alice" });
       assert.equal(params.get("requested_expiry"), "600");
       assert.equal(params.get("binding_message"), "Calendar:Add:2030-03-29T16:00Z:30m:Rehearsal:abcdabcd");
+      assert.equal(params.has("audience"), false);
+      assert.equal(params.has("authorization_details"), false);
       return Response.json({ auth_req_id: "request-id", interval: 7, expires_in: 430 });
     }
     assert.equal(url.pathname, "/oauth/token");
@@ -27,10 +34,40 @@ test("CIBA requests bind the session subject and use email expiry and the CIBA g
       ? Response.json({ error: "authorization_pending" }, { status: 400 })
       : Response.json({ access_token: "never-return-to-the-browser" });
   });
-  const started = await startCiba("auth0|alice", "Calendar:Add:2030-03-29T16:00Z:30m:Rehearsal:abcdabcd");
+  const started = await startCiba("auth0|alice", { title: "Rehearsal", start: "2030-03-29T16:00", duration: 30 }, "abcdabcd");
   assert.deepEqual(started, { authReqId: "request-id", interval: 7, expiresIn: 430 });
   assert.equal(await pollCiba(started.authReqId), "pending");
   assert.equal(await pollCiba(started.authReqId), "approved");
+});
+
+test("hosted review sends the same server-validated event and reference as the email binding", async (t) => {
+  const audience = "https://calendar-review.example.com";
+  const previous = process.env.AUTH0_CIBA_REVIEW_AUDIENCE;
+  process.env.AUTH0_CIBA_REVIEW_AUDIENCE = audience;
+  t.after(() => {
+    if (previous === undefined) delete process.env.AUTH0_CIBA_REVIEW_AUDIENCE;
+    else process.env.AUTH0_CIBA_REVIEW_AUDIENCE = previous;
+  });
+  Object.assign(process.env, {
+    AUTH0_DOMAIN: "example.auth0.com",
+    AUTH0_CLIENT_ID: "demo-client",
+    AUTH0_CLIENT_SECRET: "fixture-not-a-secret",
+  });
+  t.mock.method(globalThis, "fetch", async (url: URL, request: RequestInit) => {
+    assert.equal(url.pathname, "/bc-authorize");
+    const params = request.body as URLSearchParams;
+    assert.equal(params.get("audience"), audience);
+    assert.equal(params.get("binding_message"), "Calendar:Add:2030-03-29T16:00Z:30m:Demo-rehearsal:abcdabcd");
+    assert.deepEqual(JSON.parse(params.get("authorization_details")!), [{
+      type: "ciba_email_calendar_event",
+      title: "Demo rehearsal",
+      startUtc: "2030-03-29 16:00 UTC",
+      duration: 30,
+      reference: "abcdabcd",
+    }]);
+    return Response.json({ auth_req_id: "request-id", interval: 7, expires_in: 430 });
+  });
+  await startCiba("auth0|alice", { title: "Demo rehearsal", start: "2030-03-29T16:00", duration: 30 }, "abcdabcd");
 });
 
 test("each approved write exchanges the session refresh token rather than reusing a revoked Google token", async (t) => {

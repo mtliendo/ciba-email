@@ -25,9 +25,18 @@ corepack pnpm dev
 
 ## Try the approval
 
-1. Click **Connect Google Calendar**, allow Calendar access, and return to the app.
-2. Enter an event title, future start time in **UTC**, and duration. Click **Request email approval**. Note the matching binding message in the app and the email review.
-3. Open the email in your inbox and approve through Auth0. Return to the app and wait for **Approved · Event created**, then open the event in Google Calendar. Repeat with **Decline** or let the request time out; neither should create an event.
+1. Click **Connect Google Calendar**, allow Calendar access, and return to the **Google Calendar connected** confirmation.
+2. Enter an event title, future start in your browser's local time, and duration. Click **Review event** to check the local and UTC times before sending. Times that are skipped or occur twice during a clock change are rejected.
+3. Click **Request email approval**, then compare the pending event and request code with the delivered email before approving. Auth0's default review screen only shows Accept and Decline; to show the event on that screen, follow the optional setup below.
+4. Return to the app and wait for **Approved · Event created**, then open the event in Google Calendar. Repeat with **Decline** or let the request time out; neither should create an event.
+
+### Optional: show the event on Auth0's hosted review screen
+
+This requires a verified Auth0 custom domain and a Universal Login page template that supports prompt partials. Leave `AUTH0_CIBA_REVIEW_AUDIENCE` unset on the default tenant domain. The review in the app and the event binding in the email still work without it.
+
+1. On the tenant, register a dedicated [Rich Authorization Requests](https://auth0.com/docs/get-started/apis/configure-rich-authorization-requests) API that accepts the `ciba_email_calendar_event` authorization details type. Set user access to require a client grant and authorize only the demo app to request that type. No Calendar scopes or Google tokens belong on this API.
+2. Add the [Calendar Liquid snippet](docs/auth0-calendar-review.liquid) to the `form-content` slot of the `customized-consent` screen using [Auth0 prompt partials](https://auth0.com/docs/get-started/apis/configure-rich-authorization-requests#set-customized-consent-prompt). This is a tenant-level setting: preserve existing slots and any content already in that slot. Keep the type guard so other consent screens are unchanged.
+3. Set `AUTH0_CIBA_REVIEW_AUDIENCE` to the API Identifier. Use the verified custom domain for `AUTH0_DOMAIN` and configure the Google connection's OAuth redirect for that domain. Send a test approval and verify the hosted screen shows the event title, UTC start, duration, and reference before enabling this for users. Auth0's Accept/Decline buttons remain the only way to decide the CIBA request.
 
 ## What the demo verifies
 

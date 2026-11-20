@@ -1,0 +1,12 @@
+{% assign event = transaction.params.authorization_details[0] %}
+{% if event.type == 'ciba_email_calendar_event' %}
+  <section aria-label="Calendar event" style="margin-bottom: 1rem; text-align: left; overflow-wrap: anywhere;">
+    <p><strong>Add to Google Calendar</strong></p>
+    <dl>
+      <div><dt>Event</dt><dd>{{ event.title | escape }}</dd></div>
+      <div><dt>Start</dt><dd>{{ event.startUtc | escape }}</dd></div>
+      <div><dt>Duration</dt><dd>{{ event.duration | escape }} minutes</dd></div>
+      <div><dt>Request reference</dt><dd>{{ event.reference | escape }}</dd></div>
+    </dl>
+  </section>
+{% endif %}
