@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CALENDAR_SCOPE, googleConnection } from "./calendar.ts";
-import { CALENDAR_CONSENT_SECONDS, hasCalendarScope, sealCalendarConsent, verifiedCalendarConsent } from "./calendar-consent.ts";
+import { hasCalendarScope, sealCalendarConsent, verifiedCalendarConsent } from "./calendar-consent.ts";
 import { localStartToUtc } from "./local-start.ts";
 
 test("only the configured Google connection with Calendar scope confirms consent", () => {
@@ -11,17 +11,16 @@ test("only the configured Google connection with Calendar scope confirms consent
   assert.ok(!hasCalendarScope({ connection: googleConnection() }));
 });
 
-test("consent feedback is short-lived, owner-bound and signed", () => {
-  const now = Date.parse("2030-01-01T00:00Z");
+test("consent feedback is stable across reloads but bound to the current login and owner", () => {
+  const session = { user: { sub: "alice" }, internal: { sid: "alice-session", createdAt: 1_893_456_000 } };
   const secret = "fixture-not-a-secret";
-  const receipt = sealCalendarConsent("alice", secret, now);
-  const expires = now + CALENDAR_CONSENT_SECONDS * 1000;
-  assert.ok(verifiedCalendarConsent(receipt, "alice", secret, expires - 1));
-  assert.ok(!verifiedCalendarConsent(receipt, "alice", secret, expires));
-  assert.ok(!verifiedCalendarConsent(receipt, "bob", secret, now));
-  assert.ok(!verifiedCalendarConsent(receipt, "alice", "wrong-secret", now));
-  assert.ok(!verifiedCalendarConsent(receipt.replace(String(expires), String(expires + 1000)), "alice", secret, now));
-  assert.ok(!verifiedCalendarConsent("connected", "alice", secret, now));
+  const receipt = sealCalendarConsent(session, secret);
+  assert.ok(verifiedCalendarConsent(receipt, structuredClone(session), secret));
+  assert.ok(!verifiedCalendarConsent(receipt, { ...session, user: { sub: "bob" } }, secret));
+  assert.ok(!verifiedCalendarConsent(receipt, { ...session, internal: { ...session.internal, sid: "another-session" } }, secret));
+  assert.ok(!verifiedCalendarConsent(receipt, { ...session, internal: { ...session.internal, createdAt: session.internal.createdAt + 1 } }, secret));
+  assert.ok(!verifiedCalendarConsent(receipt, session, "wrong-secret"));
+  assert.ok(!verifiedCalendarConsent("connected", session, secret));
 });
 
 test("local time converts with the event date's offset and rejects ambiguous or nonexistent times", () => {

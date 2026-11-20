@@ -25,7 +25,7 @@ corepack pnpm dev
 
 ## Try the approval
 
-1. Click **Connect Google Calendar**, allow Calendar access, and return to the **Google Calendar connected** confirmation.
+1. Click **Connect Google Calendar**, allow Calendar access, and return to the **Google Calendar connected** confirmation. The app remembers successful consent for the current browser login without fetching a Google token before approval. If a write fails because Calendar access is missing, reconnect and request a new approval.
 2. Enter an event title, future start in your browser's local time, and duration. Click **Review event** to check the local and UTC times before sending. Times that are skipped or occur twice during a clock change are rejected.
 3. Click **Request email approval**, then compare the pending event and request code with the delivered email before approving. Auth0's default review screen only shows Accept and Decline; to show the event on that screen, follow the optional setup below.
 4. Return to the app and wait for **Approved · Event created**, then open the event in Google Calendar. Repeat with **Decline** or let the request time out; neither should create an event.

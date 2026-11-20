@@ -11,9 +11,9 @@ export default async function Home() {
   const pending = session ? await currentApproval(session.user.sub) : null;
   const canRequest = session?.user.email_verified === true && !!session.tokenSet.refreshToken;
   const secret = process.env.AUTH0_SECRET;
-  const justConnected = session && canRequest && secret && verifiedCalendarConsent(
+  const calendarConnected = session && canRequest && secret && verifiedCalendarConsent(
     (await cookies()).get(CALENDAR_CONSENT_COOKIE)?.value,
-    session.user.sub,
+    session,
     secret,
   );
 
@@ -48,12 +48,12 @@ export default async function Home() {
           <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white p-5">
             <div>
               <h2 className="font-semibold text-emerald-950">1. Connect your calendar</h2>
-              {justConnected
+              {calendarConnected
                 ? <p role="status" className="mt-1 text-sm font-medium text-emerald-800">Google Calendar connected</p>
                 : <p className="mt-1 text-sm text-stone-600">Grant Calendar access before requesting approval.</p>}
             </div>
             <a href={linkGoogleCalendar()} className="rounded-lg border border-emerald-800 px-3 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-50">
-              {justConnected ? "Reconnect Google Calendar" : "Connect Google Calendar"}
+              {calendarConnected ? "Reconnect Google Calendar" : "Connect Google Calendar"}
             </a>
           </section>
           <CibaButton

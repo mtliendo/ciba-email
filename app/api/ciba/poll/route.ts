@@ -2,6 +2,7 @@ import { auth0 } from "@/lib/auth0";
 import { advanceApproval } from "@/lib/approval";
 import { approvalJson, currentApproval, sameOrigin, setApproval } from "@/lib/approval-http";
 import { CalendarConsentRequired, googleConnection, insertEvent } from "@/lib/calendar";
+import { CALENDAR_CONSENT_COOKIE } from "@/lib/calendar-consent";
 import { exchangeConnectionToken, pollCiba } from "@/lib/ciba";
 
 export async function POST(request: Request) {
@@ -22,9 +23,12 @@ export async function POST(request: Request) {
     const response = approvalJson(result);
     return next === approval ? response : setApproval(response, next);
   } catch (error) {
-    const detail = error instanceof CalendarConsentRequired
+    const reconnect = error instanceof CalendarConsentRequired;
+    const detail = reconnect
       ? "Approved, but Google Calendar access is missing. Connect Google Calendar, then request a new approval."
       : "Could not confirm the Calendar event. Check your calendar before requesting another approval.";
-    return setApproval(approvalJson({ status: "error", detail }, 502));
+    const response = setApproval(approvalJson({ status: "error", detail, reconnect }, 502));
+    if (reconnect) response.cookies.delete(CALENDAR_CONSENT_COOKIE);
+    return response;
   }
 }

@@ -1,6 +1,6 @@
 import { Auth0Client } from "@auth0/nextjs-auth0/server";
 import { NextResponse } from "next/server";
-import { CALENDAR_CONSENT_COOKIE, CALENDAR_CONSENT_SECONDS, hasCalendarScope, sealCalendarConsent } from "./calendar-consent";
+import { CALENDAR_CONSENT_COOKIE, hasCalendarScope, sealCalendarConsent } from "./calendar-consent";
 
 export const auth0 = new Auth0Client({
   enableAccessTokenEndpoint: false,
@@ -15,12 +15,11 @@ export const auth0 = new Auth0Client({
     const account = context.connectedAccount;
     const secret = process.env.AUTH0_SECRET;
     if (account && session && secret && hasCalendarScope(account)) {
-      response.cookies.set(CALENDAR_CONSENT_COOKIE, sealCalendarConsent(session.user.sub, secret), {
+      response.cookies.set(CALENDAR_CONSENT_COOKIE, sealCalendarConsent(session, secret), {
         httpOnly: true,
         secure: home.protocol === "https:",
         sameSite: "lax",
         path: "/",
-        maxAge: CALENDAR_CONSENT_SECONDS,
       });
     }
     return response;

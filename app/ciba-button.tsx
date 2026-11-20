@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { DURATIONS, TITLE_MAX, parseCalendarAction, type CalendarAction } from "@/lib/binding-message";
 import { localStartToUtc } from "@/lib/local-start";
 import type { ApprovalStatus } from "@/lib/approval";
@@ -39,6 +40,7 @@ export function CibaButton({ email, initialStatus, hostedReview }: Props) {
   const [status, setStatus] = useState(initialStatus);
   const [draft, setDraft] = useState<CalendarAction | null>(null);
   const [sending, setSending] = useState(false);
+  const router = useRouter();
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const startInput = useRef<HTMLInputElement>(null);
   const timeZone = useSyncExternalStore(subscribeToTimeZone, browserTimeZone, serverTimeZone);
@@ -59,6 +61,7 @@ export function CibaButton({ email, initialStatus, hostedReview }: Props) {
         const result = await response.json();
         if (!controller.signal.aborted) {
           setStatus(response.ok ? result : { status: "error", detail: result.detail });
+          if (!response.ok && result.reconnect === true) router.refresh();
         }
       } catch {
         if (!controller.signal.aborted) {
@@ -70,7 +73,7 @@ export function CibaButton({ email, initialStatus, hostedReview }: Props) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [pending]);
+  }, [pending, router]);
 
   function reviewEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
