@@ -60,7 +60,7 @@ export async function pollCiba(authReqId: string) {
 }
 
 export async function exchangeConnectionToken(connection: string, refreshToken: string) {
-  const federatedToken = "urn:auth0:params:oauth:token-type:federated-connection-access-token";
+  const federatedToken = "http://auth0.com/oauth/token-type/federated-connection-access-token";
   const response = await requestAuth0("/oauth/token", {
     grant_type: "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
     subject_token_type: "urn:ietf:params:oauth:token-type:refresh_token",

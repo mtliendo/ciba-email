@@ -49,7 +49,7 @@ test("each approved write exchanges the session refresh token rather than reusin
       grant_type: "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
       subject_token_type: "urn:ietf:params:oauth:token-type:refresh_token",
       subject_token: "session-refresh-token",
-      requested_token_type: "urn:auth0:params:oauth:token-type:federated-connection-access-token",
+      requested_token_type: "http://auth0.com/oauth/token-type/federated-connection-access-token",
       connection: "google-calendar",
     });
     return reply;
