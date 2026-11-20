@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { auth0 } from "@/lib/auth0";
 import { approvalJson, currentApproval, sameOrigin, setApproval } from "@/lib/approval-http";
 import { pendingStatus } from "@/lib/approval";
-import { calendarBindingMessage, parseCalendarAction } from "@/lib/binding-message";
+import { parseCalendarAction } from "@/lib/binding-message";
 import { startCiba } from "@/lib/ciba";
 
 export async function POST(request: Request) {
@@ -19,12 +19,12 @@ export async function POST(request: Request) {
   const existing = await currentApproval(session.user.sub);
   if (existing && Date.now() < existing.expiresAt) return approvalJson(pendingStatus(existing));
   const action = parseCalendarAction(await request.json().catch(() => null));
-  if (!action) return approvalJson({ detail: "Enter a valid title, future UTC start and duration." }, 400);
+  if (!action) return approvalJson({ detail: "Enter a valid title, future start time and duration." }, 400);
 
   try {
     const eventId = randomUUID().replaceAll("-", "");
     const now = Date.now();
-    const ciba = await startCiba(session.user.sub, calendarBindingMessage(action, eventId.slice(0, 8)));
+    const ciba = await startCiba(session.user.sub, action, eventId.slice(0, 8));
     const approval = {
       owner: session.user.sub,
       authReqId: ciba.authReqId,

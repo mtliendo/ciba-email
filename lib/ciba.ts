@@ -1,3 +1,5 @@
+import { calendarBindingMessage, type CalendarAction } from "./binding-message.ts";
+
 const EMAIL_EXPIRY_SECONDS = 600;
 
 function issuer() {
@@ -21,12 +23,23 @@ async function requestAuth0(path: string, parameters: Record<string, string>) {
   });
 }
 
-export async function startCiba(sub: string, bindingMessage: string) {
+export async function startCiba(sub: string, action: CalendarAction, reference: string) {
+  const audience = process.env.AUTH0_CIBA_REVIEW_AUDIENCE;
   const response = await requestAuth0("/bc-authorize", {
     scope: "openid",
-    binding_message: bindingMessage,
+    binding_message: calendarBindingMessage(action, reference),
     requested_expiry: String(EMAIL_EXPIRY_SECONDS),
     login_hint: JSON.stringify({ format: "iss_sub", iss: issuer().origin + "/", sub }),
+    ...(audience ? {
+      audience,
+      authorization_details: JSON.stringify([{
+        type: "ciba_email_calendar_event",
+        title: action.title,
+        startUtc: `${action.start.replace("T", " ")} UTC`,
+        duration: action.duration,
+        reference,
+      }]),
+    } : {}),
   });
   if (!response.ok) throw new Error(`Auth0 backchannel status: ${response.status}`);
   const data = await response.json();
