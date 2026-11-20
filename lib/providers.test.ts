@@ -9,7 +9,8 @@ test("CIBA requests bind the session subject and use email expiry and the CIBA g
     AUTH0_CLIENT_ID: "demo-client",
     AUTH0_CLIENT_SECRET: "fixture-not-a-secret",
   });
-  const fetch = t.mock.method(globalThis, "fetch", async (url: URL, request: RequestInit) => {
+  let polls = 0;
+  t.mock.method(globalThis, "fetch", async (url: URL, request: RequestInit) => {
     const params = request.body as URLSearchParams;
     assert.equal(url.origin, "https://example.auth0.com");
     assert.equal(params.get("client_id"), "demo-client");
@@ -22,7 +23,7 @@ test("CIBA requests bind the session subject and use email expiry and the CIBA g
     assert.equal(url.pathname, "/oauth/token");
     assert.equal(params.get("grant_type"), "urn:openid:params:grant-type:ciba");
     assert.equal(params.get("auth_req_id"), "request-id");
-    return fetch.mock.callCount() === 2
+    return ++polls === 1
       ? Response.json({ error: "authorization_pending" }, { status: 400 })
       : Response.json({ access_token: "never-return-to-the-browser" });
   });

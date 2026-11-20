@@ -35,7 +35,7 @@ export function pendingStatus(approval: PendingApproval, now = Date.now()): Appr
 function approvalKey() {
   const secret = process.env.AUTH0_SECRET;
   if (!secret) throw new Error("Missing AUTH0_SECRET");
-  return hkdfSync("sha256", secret, "", "ciba-email/calendar-approval-v1", 32);
+  return Buffer.from(hkdfSync("sha256", secret, "", "ciba-email/calendar-approval-v1", 32));
 }
 
 export function sealApproval(approval: PendingApproval) {

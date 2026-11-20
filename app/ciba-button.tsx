@@ -109,7 +109,7 @@ export function CibaButton({ email, initialStatus }: Props) {
             <p className="font-semibold">Approved · Event created</p>
             {status.link ? <a href={status.link} target="_blank" rel="noreferrer" className="mt-1 inline-block underline">Open in Google Calendar</a> : null}
           </div>
-        ) : status ? (
+        ) : status && "detail" in status ? (
           <div className="mt-5 rounded-lg border border-stone-300 bg-stone-50 p-4 text-sm text-stone-800">
             <p className="font-semibold">{status.status === "denied" ? "Approval declined" : status.status === "expired" ? "Approval expired" : "Could not complete the request"}</p>
             <p className="mt-1">{status.detail}</p>
