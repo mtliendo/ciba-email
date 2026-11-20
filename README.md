@@ -33,7 +33,7 @@ corepack pnpm dev
 
 - The server binds the event details and Auth0 request ID in a short-lived, encrypted HTTP-only cookie. Refreshing in the same browser resumes polling; closing the tab pauses it. This is not a durable background queue.
 - Polling uses the provider interval and backs off on `slow_down`. No Calendar write runs until Auth0 approves. There is no route that accepts an event payload after approval.
-- CIBA verifies consent for the event; it does **not** mint the Google token. After approval the server uses the same user's Auth0 session to retrieve a Google token through Token Vault. The Calendar API handles the connected account's Google permissions.
+- CIBA verifies consent for the event; it does **not** mint the Google token. For each approved event the server exchanges the same user's Auth0 refresh token through Token Vault, without reusing a Google token from the session cache after reconnection. The Calendar API handles the connected account's Google permissions.
 - Auth0's CIBA response is single-use, and the Calendar write includes a stable event ID. If the app cannot confirm the write, it doesn't retry automatically. Check Calendar before making a new request.
 
 ```sh

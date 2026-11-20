@@ -58,3 +58,17 @@ export async function pollCiba(authReqId: string) {
     default: throw new Error(`Auth0 polling status: ${response.status}`);
   }
 }
+
+export async function exchangeConnectionToken(connection: string, refreshToken: string) {
+  const federatedToken = "urn:auth0:params:oauth:token-type:federated-connection-access-token";
+  const response = await requestAuth0("/oauth/token", {
+    grant_type: "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
+    subject_token_type: "urn:ietf:params:oauth:token-type:refresh_token",
+    subject_token: refreshToken,
+    requested_token_type: federatedToken,
+    connection,
+  });
+  if (!response.ok) return null;
+  const { access_token } = await response.json();
+  return typeof access_token === "string" && access_token ? access_token : null;
+}

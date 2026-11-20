@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pollCiba, startCiba } from "./ciba.ts";
+import { exchangeConnectionToken, pollCiba, startCiba } from "./ciba.ts";
 import { CalendarConsentRequired, insertEvent } from "./calendar.ts";
 
 test("CIBA requests bind the session subject and use email expiry and the CIBA grant", async (t) => {
@@ -31,6 +31,35 @@ test("CIBA requests bind the session subject and use email expiry and the CIBA g
   assert.deepEqual(started, { authReqId: "request-id", interval: 7, expiresIn: 430 });
   assert.equal(await pollCiba(started.authReqId), "pending");
   assert.equal(await pollCiba(started.authReqId), "approved");
+});
+
+test("each approved write exchanges the session refresh token rather than reusing a revoked Google token", async (t) => {
+  Object.assign(process.env, {
+    AUTH0_DOMAIN: "example.auth0.com",
+    AUTH0_CLIENT_ID: "demo-client",
+    AUTH0_CLIENT_SECRET: "fixture-not-a-secret",
+  });
+  let reply = Response.json({ access_token: "original-token" });
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    assert.equal(url.href, "https://example.auth0.com/oauth/token");
+    assert.equal(init.method, "POST");
+    assert.deepEqual(Object.fromEntries(init.body as URLSearchParams), {
+      client_id: "demo-client",
+      client_secret: "fixture-not-a-secret",
+      grant_type: "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
+      subject_token_type: "urn:ietf:params:oauth:token-type:refresh_token",
+      subject_token: "session-refresh-token",
+      requested_token_type: "urn:auth0:params:oauth:token-type:federated-connection-access-token",
+      connection: "google-calendar",
+    });
+    return reply;
+  });
+  const exchange = () => exchangeConnectionToken("google-calendar", "session-refresh-token");
+  assert.equal(await exchange(), "original-token");
+  reply = Response.json({ error: "invalid_grant" }, { status: 400 });
+  assert.equal(await exchange(), null);
+  reply = Response.json({ access_token: "reconnected-token" });
+  assert.equal(await exchange(), "reconnected-token");
 });
 
 test("Calendar insert only uses the primary calendar, UTC event times and a stable ID", async (t) => {

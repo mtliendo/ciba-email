@@ -2,7 +2,7 @@ import { auth0 } from "@/lib/auth0";
 import { advanceApproval } from "@/lib/approval";
 import { approvalJson, currentApproval, sameOrigin, setApproval } from "@/lib/approval-http";
 import { CalendarConsentRequired, googleConnection, insertEvent } from "@/lib/calendar";
-import { pollCiba } from "@/lib/ciba";
+import { exchangeConnectionToken, pollCiba } from "@/lib/ciba";
 
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return approvalJson({ detail: "Invalid request origin." }, 403);
@@ -13,9 +13,11 @@ export async function POST(request: Request) {
 
   try {
     const { next, result } = await advanceApproval(approval, pollCiba, async (action, eventId) => {
-      const grant = await auth0.getAccessTokenForConnection({ connection: googleConnection() }).catch(() => null);
-      if (!grant) throw new CalendarConsentRequired();
-      return insertEvent(grant.token, action, eventId);
+      const refreshToken = session.tokenSet.refreshToken;
+      if (!refreshToken) throw new CalendarConsentRequired();
+      const token = await exchangeConnectionToken(googleConnection(), refreshToken).catch(() => null);
+      if (!token) throw new CalendarConsentRequired();
+      return insertEvent(token, action, eventId);
     });
     const response = approvalJson(result);
     return next === approval ? response : setApproval(response, next);
