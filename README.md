@@ -1,61 +1,43 @@
-# CIBA email hello
+# Email approval for Google Calendar
 
-Example Next.js app that shows how Auth0 CIBA works over email. Learning demo, not a product.
+An Auth0 learning demo: draft an event, approve it in your inbox with CIBA, and let the app use Token Vault to write to your primary Google Calendar. Unlike the [Google Token Vault sample](https://github.com/focusOtter/google-token-vault), this demo adds a one-time approval before a write. It uses no LLM and sends no meeting invitations.
 
-Flow: log in, type a binding message, click one button. The app POSTs /bc-authorize, Auth0 emails the authorizing user, you Accept, the app polls /oauth/token with the CIBA grant until tokens come back.
+**Topics:** auth0, ciba, asynchronous-approval, token-vault, google-calendar, nextjs
 
-## What actually makes CIBA work
+![Architecture: the browser requests email approval from Auth0; the Next.js server waits for approval before retrieving a Google token and creating the event.](docs/architecture.svg)
 
-1. Confidential Regular Web App (client secret). Next.js login uses /auth/login and /auth/callback from @auth0/nextjs-auth0.
-2. CIBA grant on that app, plus the email notification channel (not Guardian).
-3. requested_expiry=600. Auth0 picks the channel from this number:
-   - 300 seconds or less: Guardian push
-   - 301 to 259200 seconds: email
-4. login_hint is iss_sub, not a raw email. This demo authorizes admin@focusotter.com. If you log in as that user, we use the session sub. Otherwise set AUTH0_CIBA_SUB.
-5. binding_message is the context on the review screen (the box under is requesting access). Required. Max 64 characters. Only letters, numbers, and +-_.,:#. No spaces. This app turns spaces into hyphens.
-6. Authorizing user must have a verified email.
+## Run locally
 
-## Plan
+Use Node 24 and pnpm. Copy `.env.example` to `.env.local` and fill in the values. Generate `AUTH0_SECRET` with `openssl rand -hex 32`.
 
-CIBA is not on the Free plan.
+1. Create a **Regular Web Application** with a client secret (Post) on a tenant that supports CIBA email and Token Vault. Allow `http://localhost:3000/auth/callback` as a callback; allow `http://localhost:3000` for logout and web origins.
+2. Enable Authorization Code, Refresh Token, CIBA (`urn:openid:params:grant-type:ciba`) and Token Vault (`urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token`). Enable **email** as a CIBA notification channel. The app requests 600 seconds: Auth0 uses email for requests over 300 seconds when enabled. Use Auth0's built-in email provider for testing; production needs a configured provider and Asynchronous Approval template.
+3. Under your app's API access, authorize the Auth0 My Account API with `create:me:connected_accounts`. Use a non-rotating, time-limited refresh token and a Multi-Resource Refresh Token policy for the tenant's `https://YOUR_AUTH0_DOMAIN/me/` audience with that scope. Sign in again after changing grants.
+4. Use a Google OAuth web client with the **Calendar API** enabled. Add your test user to the Google consent screen and allow the Google callback displayed by Auth0 (usually `https://YOUR_AUTH0_DOMAIN/login/callback`). Configure a Google social connection for **Connected Accounts / Token Vault**, allow offline access and `https://www.googleapis.com/auth/calendar.events.owned`, and enable the connection on this app. Set `AUTH0_GOOGLE_CONNECTION` to its name. Do not add write scopes to Orbit's or another demo's shared connection.
+5. Enable a login connection. Sign in using a verified email address you can access. The signed-in Auth0 subject is the approver; this demo never redirects approval to an arbitrary email or tenant-wide demo account.
 
-- Minimum: Essentials plus the Auth0 for AI Agents add-on.
-- B2C Essentials at 500 MAUs is 35 USD/month. The add-on is 50 percent of the base, rounded up, so 18 USD/month on that SKU.
-- Guardian push CIBA is included on Enterprise. Email CIBA is the add-on on a paid plan.
-- A new tenant gets a 22-day trial of most paid features. Email CIBA is a separate add-on SKU; confirm the CIBA email channel toggle is available before you count on the trial.
-- Pricing: https://auth0.com/pricing
+See [Auth0 CIBA app configuration](https://auth0.com/docs/get-started/applications/configure-client-initiated-backchannel-authentication), [Token Vault configuration](https://auth0.com/docs/secure/call-apis-on-users-behalf/token-vault/configure-token-vault) and the [Google Token Vault setup guide](https://docs.google.com/document/d/1K1GCk2OE8vrYr_nVa2ut4Zlzv-ME5Unuqyf2UFj7we4/edit) for details.
 
-You only need one paid tenant. Reuse it for later demos.
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm dev
+```
 
-## Dashboard setup
+## Try the approval
 
-1. Applications > Applications > Create Application. Regular Web Application (the Next.js option is fine).
-2. Let the Next.js quick start add callback and logout. Callback is localhost:3000/auth/callback. Logout and allowed origins are localhost:3000.
-3. Settings: enable Client Initiated Backchannel Authentication (CIBA) and select the email channel. That is the CIBA-specific part.
-4. Leave the default Auth0 email provider if this is not going to prod. Optional: Branding > Email Templates > Asynchronous Approval if you want to customize the mail.
-5. Confirm admin@focusotter.com exists and the email is verified.
-6. Copy env.example to .env.local. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, a random AUTH0_SECRET, and APP_BASE_URL.
+1. Click **Connect Google Calendar**, allow Calendar access, and return to the app.
+2. Enter an event title, future start time in **UTC**, and duration. Click **Request email approval**. Note the matching binding message in the app and the email review.
+3. Open the email in your inbox and approve through Auth0. Return to the app and wait for **Approved · Event created**, then open the event in Google Calendar. Repeat with **Decline** or let the request time out; neither should create an event.
 
-## FAQ
+## What the demo verifies
 
-### Why CIBA instead of just emailing a link with Resend?
+- The server binds the event details and Auth0 request ID in a short-lived, encrypted HTTP-only cookie. Refreshing in the same browser resumes polling; closing the tab pauses it. This is not a durable background queue.
+- Polling uses the provider interval and backs off on `slow_down`. No Calendar write runs until Auth0 approves. There is no route that accepts an event payload after approval.
+- CIBA verifies consent for the event; it does **not** mint the Google token. After approval the server uses the same user's Auth0 session to retrieve a Google token through Token Vault. The Calendar API handles the connected account's Google permissions.
+- Auth0's CIBA response is single-use, and the Calendar write includes a stable event ID. If the app cannot confirm the write, it doesn't retry automatically. Check Calendar before making a new request.
 
-Three people.
-
-You are at dinner. Your Demo PM needs 30 minutes on your Google Calendar Thursday for a rehearsal. He does not have your Google. He tells your agent: book Focus Thursday 4 to 4:30, title Rehearsal.
-
-The agent cannot write your calendar. It is not you. So it asks Auth0: I need a token for Focus, calendar write, message Rehearsal-Thu-4pm. Auth0 knows you as admin@focusotter.com. It emails you. The Demo PM is still in Slack. The agent is sitting there polling. You are the only one who got mail.
-
-You tap Accept. That tap is you telling Auth0: yes, this app can write my calendar for that. Auth0 hands the agent an access token. The agent writes Thursday 4pm. The Demo PM never got your password, never got the token, never opened a browser as you. He only asked. The agent only acted after you said yes to Auth0. If you ignore the mail, he still has nothing, and your calendar is empty.
-
-That is CIBA. I request, the agent waits, you authorize. The leftover is a token that says this user authorized this client.
-
-### What does the poor-man's Resend version do?
-
-Same scene, cheaper wire.
-
-The Demo PM (or the agent) sends you mail through Resend: Approve rehearsal Thursday 4pm? with a button to yoursite.com/yes?ticket=abc. You click it. Your app marks ticket abc approved, then YOUR code calls Google with a Calendar key you already saved, or as a service account.
-
-Auth0 never heard about it. The click proved someone who got that mail hit your URL. It did not prove Michael authorized this app to write his calendar right now. If the next step needs his Google access, you already had to be holding that token from some earlier login. The email did not mint one.
-
-Same tap. Different leftover: a yes-row in your database vs an Auth0-issued access token. Use Resend when a yes/no in your database is enough. Use CIBA when the next call has to be as that user.
+```sh
+corepack pnpm test
+corepack pnpm lint
+corepack pnpm build
+```

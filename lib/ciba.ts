@@ -1,109 +1,60 @@
-import { sanitizeBindingMessage } from './binding-message'
-
-const CIBA_EMAIL = 'admin@focusotter.com'
-// Auth0 sends email when requested_expiry is 301-259200s. <=300 is Guardian push.
-const EMAIL_EXPIRY_SECONDS = 600
-
-function domain() {
-  const raw = process.env.AUTH0_DOMAIN
-  if (!raw) throw new Error('AUTH0_DOMAIN is not set')
-  return raw.replace(/^https?:\/\//, '').replace(/\/$/, '')
-}
+const EMAIL_EXPIRY_SECONDS = 600;
 
 function issuer() {
-  return `https://${domain()}/`
+  const domain = process.env.AUTH0_DOMAIN;
+  if (!domain) throw new Error("Missing AUTH0_DOMAIN");
+  return new URL(domain.includes("://") ? domain : `https://${domain}`);
 }
 
-function requireEnv(name: string) {
-  const value = process.env[name]
-  if (!value) throw new Error(`${name} is not set`)
-  return value
-}
-
-export async function resolveCibaUserSub(
-  sessionSub?: string,
-  sessionEmail?: string,
-) {
-  if (sessionEmail?.toLowerCase() === CIBA_EMAIL && sessionSub) {
-    return sessionSub
-  }
-  if (process.env.AUTH0_CIBA_SUB) {
-    return process.env.AUTH0_CIBA_SUB
-  }
-  throw new Error(
-    `Need the Auth0 user id for ${CIBA_EMAIL}. Log in as that user, or set AUTH0_CIBA_SUB.`,
-  )
+async function requestAuth0(path: string, parameters: Record<string, string>) {
+  const { AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET } = process.env;
+  if (!AUTH0_CLIENT_ID || !AUTH0_CLIENT_SECRET) throw new Error("Missing Auth0 credentials");
+  return fetch(new URL(path, issuer()), {
+    method: "POST",
+    body: new URLSearchParams({
+      client_id: AUTH0_CLIENT_ID,
+      client_secret: AUTH0_CLIENT_SECRET,
+      ...parameters,
+    }),
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+  });
 }
 
 export async function startCiba(sub: string, bindingMessage: string) {
-  const cleaned = sanitizeBindingMessage(bindingMessage)
-  const body = new URLSearchParams({
-    client_id: requireEnv('AUTH0_CLIENT_ID'),
-    client_secret: requireEnv('AUTH0_CLIENT_SECRET'),
-    scope: 'openid',
-    binding_message: cleaned,
+  const response = await requestAuth0("/bc-authorize", {
+    scope: "openid",
+    binding_message: bindingMessage,
     requested_expiry: String(EMAIL_EXPIRY_SECONDS),
-    login_hint: JSON.stringify({
-      format: 'iss_sub',
-      iss: issuer(),
-      sub,
-    }),
-  })
-
-  const res = await fetch(`https://${domain()}/bc-authorize`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body,
-  })
-  const json = await res.json()
-  if (!res.ok) {
-    throw new Error(
-      json.error_description || json.error || 'bc-authorize failed',
-    )
+    login_hint: JSON.stringify({ format: "iss_sub", iss: issuer().origin + "/", sub }),
+  });
+  if (!response.ok) throw new Error(`Auth0 backchannel status: ${response.status}`);
+  const data = await response.json();
+  if (
+    typeof data.auth_req_id !== "string" || !data.auth_req_id || data.auth_req_id.length > 2000 ||
+    !Number.isSafeInteger(data.expires_in) || data.expires_in <= 0
+  ) {
+    throw new Error("Invalid backchannel response");
   }
   return {
-    authReqId: json.auth_req_id as string,
-    interval: Number(json.interval ?? 5),
-    expiresIn: Number(json.expires_in ?? EMAIL_EXPIRY_SECONDS),
-    email: CIBA_EMAIL,
-    bindingMessage: cleaned,
-  }
+    authReqId: data.auth_req_id as string,
+    interval: Number.isSafeInteger(data.interval) ? Math.max(5, data.interval) : 5,
+    expiresIn: Math.min(data.expires_in, EMAIL_EXPIRY_SECONDS),
+  };
 }
 
 export async function pollCiba(authReqId: string) {
-  const body = new URLSearchParams({
-    grant_type: 'urn:openid:params:grant-type:ciba',
-    client_id: requireEnv('AUTH0_CLIENT_ID'),
-    client_secret: requireEnv('AUTH0_CLIENT_SECRET'),
+  const response = await requestAuth0("/oauth/token", {
+    grant_type: "urn:openid:params:grant-type:ciba",
     auth_req_id: authReqId,
-  })
-
-  const res = await fetch(`https://${domain()}/oauth/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body,
-  })
-  const json = await res.json()
-
-  if (res.ok && json.access_token) {
-    return { status: 'approved' as const }
-  }
-
-  const error = json.error as string | undefined
-  if (error === 'authorization_pending') {
-    return { status: 'pending' as const, interval: Number(json.interval ?? 5) }
-  }
-  if (error === 'slow_down') {
-    return { status: 'pending' as const, interval: Number(json.interval ?? 10) }
-  }
-  if (error === 'access_denied' || error === 'expired_token') {
-    return {
-      status: 'denied' as const,
-      error: json.error_description || error,
-    }
-  }
-  return {
-    status: 'error' as const,
-    error: json.error_description || error || 'token poll failed',
+  });
+  const data = await response.json();
+  if (response.ok && typeof data.access_token === "string" && data.access_token) return "approved";
+  switch (data.error) {
+    case "authorization_pending": return "pending";
+    case "slow_down": return "slow_down";
+    case "access_denied": return "denied";
+    case "expired_token": return "expired";
+    default: throw new Error(`Auth0 polling status: ${response.status}`);
   }
 }
